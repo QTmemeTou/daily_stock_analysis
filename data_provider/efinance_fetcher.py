@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===================================
-EfinanceFetcher - 优先数据源 (Priority 1)
+EfinanceFetcher - 优先数据源 (Priority 0)
 ===================================
 
 数据来源：东方财富爬虫（通过 efinance 库）
