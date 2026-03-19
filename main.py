@@ -22,6 +22,9 @@ A股自选股智能分析系统 - 主调度程序
 - 买点偏好：缩量回踩 MA5/MA10 支撑
 """
 import os
+os.environ['TZ'] = 'Asia/Shanghai'
+
+import os
 from src.config import setup_env
 setup_env()
 
