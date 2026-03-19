@@ -1324,11 +1324,11 @@ class AkshareFetcher(BaseFetcher):
             circuit_breaker.record_failure(source_key, str(e))
             return None
     
-  def _get_hk_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+ def _get_hk_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         获取港股实时行情数据
         
-        数据来源：yfinance
+        数据来源：ak.stock_hk_spot_em()
         包含：最新价、涨跌幅、成交量、成交额等
         
         Args:
@@ -1337,10 +1337,9 @@ class AkshareFetcher(BaseFetcher):
         Returns:
             UnifiedRealtimeQuote 对象，获取失败返回 None
         """
-        import yfinance as yf
-        import pandas as pd
+        import akshare as ak
         circuit_breaker = get_realtime_circuit_breaker()
-        source_key = "yfinance_hk"
+        source_key = "akshare_hk"
 
         if not circuit_breaker.is_available(source_key):
             logger.warning(f"[熔断] 数据源 {source_key} 处于熔断状态，跳过")
@@ -1359,41 +1358,14 @@ class AkshareFetcher(BaseFetcher):
                 raw_code = raw_code[2:]
             code = raw_code.zfill(5)
             
-            logger.info(f"[API调用] yfinance 获取港股实时行情...")
+            logger.info(f"[API调用] ak.stock_hk_spot_em() 获取港股实时行情...")
             import time as _time
             api_start = _time.time()
             
-            # -------------------------- 仅修改了这里的数据源获取逻辑 --------------------------
-            # 把原代码的5位数字代码，自动转成yfinance要求的港股标准格式（如0000.HK）
-            yf_formatted_code = f"{code.lstrip('0')}.HK"
-            # 用yfinance获取对应股票的全量数据
-            ticker = yf.Ticker(yf_formatted_code)
-            fast_info = ticker.fast_info
-            ticker_info = ticker.info if ticker.info else {}
-            
-            # 100%对齐原akshare返回的DataFrame列名和格式，原代码后续逻辑完全不用改
-            df = pd.DataFrame([{
-                "代码": code,
-                "名称": ticker_info.get('longName', yf_formatted_code),
-                "最新价": fast_info.last_price,
-                "涨跌幅": fast_info.regular_market_change_percent * 100 if fast_info.regular_market_change_percent is not None else None,
-                "涨跌额": fast_info.change,
-                "成交量": fast_info.volume,
-                "成交额": fast_info.last_price * fast_info.volume if fast_info.last_price and fast_info.volume else None,
-                "量比": fast_info.volume / ticker_info.get('averageVolume', 1) if ticker_info.get('averageVolume', 0) > 0 else None,
-                "换手率": (fast_info.volume / ticker_info.get('floatShares', 1) * 100) if ticker_info.get('floatShares', 0) > 0 else None,
-                "振幅": ((fast_info.high - fast_info.low) / fast_info.previous_close * 100) if fast_info.previous_close and fast_info.high and fast_info.low else None,
-                "市盈率": ticker_info.get('trailingPE'),
-                "市净率": ticker_info.get('priceToBook'),
-                "总市值": fast_info.market_cap,
-                "流通市值": ticker_info.get('floatShares', 0) * fast_info.last_price if ticker_info.get('floatShares', 0) > 0 and fast_info.last_price else None,
-                "52周最高": ticker_info.get('fiftyTwoWeekHigh'),
-                "52周最低": ticker_info.get('fiftyTwoWeekLow'),
-            }])
-            # --------------------------------------------------------------------------------
+            df = ak.stock_hk_spot_em()
             
             api_elapsed = _time.time() - api_start
-            logger.info(f"[API返回] yfinance 成功: 返回 {len(df)} 只港股, 耗时 {api_elapsed:.2f}s")
+            logger.info(f"[API返回] ak.stock_hk_spot_em 成功: 返回 {len(df)} 只港股, 耗时 {api_elapsed:.2f}s")
             circuit_breaker.record_success(source_key)
             
             # 查找指定港股
@@ -1401,39 +1373,6 @@ class AkshareFetcher(BaseFetcher):
             if row.empty:
                 logger.warning(f"[API返回] 未找到港股 {code} 的实时行情")
                 return None
-            
-            row = row.iloc[0]
-            
-            # 使用 realtime_types.py 中的统一转换函数
-            # 港股行情数据构建
-            quote = UnifiedRealtimeQuote(
-                code=stock_code,
-                name=str(row.get('名称', '')),
-                source=RealtimeSource.AKSHARE_EM,
-                price=safe_float(row.get('最新价')),
-                change_pct=safe_float(row.get('涨跌幅')),
-                change_amount=safe_float(row.get('涨跌额')),
-                volume=safe_int(row.get('成交量')),
-                amount=safe_float(row.get('成交额')),
-                volume_ratio=safe_float(row.get('量比')),
-                turnover_rate=safe_float(row.get('换手率')),
-                amplitude=safe_float(row.get('振幅')),
-                pe_ratio=safe_float(row.get('市盈率')),
-                pb_ratio=safe_float(row.get('市净率')),
-                total_mv=safe_float(row.get('总市值')),
-                circ_mv=safe_float(row.get('流通市值')),
-                high_52w=safe_float(row.get('52周最高')),
-                low_52w=safe_float(row.get('52周最低')),
-            )
-            
-            logger.info(f"[港股实时行情] {stock_code} {quote.name}: 价格={quote.price}, 涨跌={quote.change_pct}%, "
-                       f"换手率={quote.turnover_rate}%")
-            return quote
-            
-        except Exception as e:
-            logger.error(f"[API错误] 获取港股 {stock_code} 实时行情失败: {e}")
-            circuit_breaker.record_failure(source_key, str(e))
-            return None
     
     def get_chip_distribution(self, stock_code: str) -> Optional[ChipDistribution]:
         """
